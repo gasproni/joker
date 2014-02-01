@@ -1,0 +1,12 @@
+defaultTasks 'clean', 'build'
+
+apply plugin: "java"
+apply plugin: "findbugs"
+
+dependencies {
+    compile libs.jetty, libs.json, project(':')
+}
+
+build.dependsOn rootProject.jar
+
+

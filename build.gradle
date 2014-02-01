@@ -1,0 +1,121 @@
+
+defaultTasks 'clean', 'build'
+
+apply plugin: "java"
+apply plugin: "findbugs"
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '1.10'
+}
+
+allprojects {
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+ext {
+libs = [
+
+     junit : 'junit:junit:4.11',
+     jmock : 'org.jmock:jmock-junit4:2.6.0',
+     jetty : ['org.eclipse.jetty:jetty-http:9.1.0.v20131115',
+        'org.eclipse.jetty:jetty-io:9.1.0.v20131115',
+        'org.eclipse.jetty:jetty-server:9.1.0.v20131115',
+        'org.eclipse.jetty:jetty-servlet:9.1.0.v20131115',
+        'org.eclipse.jetty:jetty-util:9.1.0.v20131115',
+        'javax.servlet:javax.servlet-api:3.1'],
+     json : 'com.google.code.gson:gson:2.2.4'
+]
+}
+}
+
+task makeRelease(type: Copy) {
+    into "${libsDir}/runtimeDependencies"
+    from configurations.runtime
+    from file(tasks.jar.archivePath)
+}
+
+makeRelease.dependsOn build
+
+
+dependencies {
+    compile libs.jetty, libs.json
+
+    testCompile libs.jetty, libs.json, libs.junit, libs.jmock
+
+    testRuntime libs.jetty, libs.json, libs.junit, libs.jmock
+}
+
+
+sourceSets {
+    test {
+        java {
+            srcDirs 'src/test/java/acceptance', 'src/test/java/unit'
+        }
+    }
+}
+
+def compilerArgs = ["-Xlint:unchecked"]
+
+compileJava {
+    options.compilerArgs = compilerArgs
+}
+
+compileTestJava {
+    options.compilerArgs = compilerArgs
+}
+
+task getVersion {
+     new ByteArrayOutputStream().withStream { execOS ->
+            try {
+	    	exec {
+                     executable = 'git'
+                     args = [ 'describe', '--tags', '--match', '[0-9]*-release', '--dirty=-SNAPSHOT' ]
+                     standardOutput = execOS
+            	     }
+	    }
+	    catch(Exception ignored) {
+	    	return "noversion"
+	    }
+
+            // calculate version information
+            def buildVersion = execOS.toString().trim().replaceAll("-release", "")
+            def buildVersionMajor = buildVersion.replaceAll("^(\\d+).*\$", "\$1")
+            def buildVersionMinor = buildVersion.replaceAll("^\\d+\\.(\\d+).*\$", "\$1")
+            def buildVersionRev = buildVersion.replaceAll("^\\d+\\.\\d+\\.(\\d+).*\$", "\$1")
+            def buildTag = buildVersion.replaceAll("^[^-]*-(.*)\$", "\$1").replaceAll("^(.*)-dirty\$", "\$1")
+            def dirty = buildVersion.endsWith("dirty")
+
+            println("Version: " + buildVersion)
+            println("Major: " + buildVersionMajor)
+            println("Minor: " + buildVersionMinor)
+            println("Revision: " + buildVersionRev)
+            println("Tag: " + buildTag)
+            println("Dirty: " + dirty)
+
+            version buildVersion
+        }
+}
+
+
+jar.dependsOn getVersion
+
+task uberjar(type: Jar) {
+        version += '-uberjar'
+        from fileTree(sourceSets.main.output.classesDir)
+        from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
+            exclude "META-INF/*.SF"
+            exclude "META-INF/*.DSA"
+            exclude "META-INF/*.RSA"
+        }
+
+        manifest {
+            attributes 'Implementation-Title': 'Foobar',
+                    'Implementation-Version': version,
+                    'Built-Date': new Date(),
+                    'Built-JDK': System.getProperty('java.version')
+        }
+}
+
+uberjar.dependsOn getVersion
